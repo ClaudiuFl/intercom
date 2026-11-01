@@ -1,0 +1,402 @@
+{
+  "name": "Intercom DEX - TEST sigur - analiza aprobare fara ordine",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "762b3741-1f99-4922-813f-a03ce931592a",
+      "name": "Start manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1856,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://example.invalid:47203/v1/market/view",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -1632,
+        -80
+      ],
+      "id": "9bba43dc-b206-41d5-8cf1-9d2917a01a2c",
+      "name": "HTTP Request4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nlet pairs = raw?.pairs ?? raw?.data?.[0]?.pairs ?? raw?.data?.pairs;\nif (!pairs && Array.isArray(raw?.data)) pairs = raw.data.find(x => x?.pairs)?.pairs;\nif (!pairs) pairs = [];\nif (!Array.isArray(pairs)) pairs = Object.entries(pairs).map(([pair, value]) => ({pair, ...value}));\nreturn [{json:{pairs, source_ok: pairs.length > 0}}];"
+      },
+      "id": "e55444b3-1f16-46f5-8703-9b0ca3f01d0e",
+      "name": "Normalize Market Feed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1440,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analizează strict datele JSON oferite din Intercom DEX pentru TNK/USDC și RESET/USDC:\n{{ JSON.stringify($('Normalize Market Feed').first().json.pairs) }}\n\nO singură recomandare pentru cea mai bună pereche. Returnează doar JSON cu pair, side, price, amount, reason, ready_to_trade. Dacă piața e suspendată, lipsesc bestBuy/bestSell, lichiditatea, sau datele sunt incomplete: side=wait, price=null, amount=0, ready_to_trade=false. Nu inventa cotații. Nu transmite ordine. Pentru orice propunere pregătită, valoarea price*amount nu trebuie să depășească 10 USDC. Dacă nu poți calcula o propunere sigură, WAIT.",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1216,
+        -80
+      ],
+      "id": "61c0c4f1-5c96-40ad-8f8f-141ed0a4fcc0",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -1264,
+        192
+      ],
+      "id": "d339fce8-4fee-4e21-998c-9dcc208ce0bc",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"pair\": \"TNK/USDC\", \"side\": \"wait\", \"price\": 0, \"amount\": 0, \"reason\": \"Lipsă cotații sau lichiditate\", \"ready_to_trade\": false}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -1024,
+        192
+      ],
+      "id": "43be909d-583d-499d-ae72-bb38a1b6e0f9",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "recipient@example.invalid",
+        "subject": "Intercom DEX - Aprobare tranzactie AI",
+        "message": "=TEST FĂRĂ TRANZACȚII. Propunerea: {{ JSON.stringify($('Validate Proposal (max 10 USDC)').first().json.proposal) }}. Motiv: {{ $('Validate Proposal (max 10 USDC)').first().json.reason }}. Approve permite doar o simulare, NU trimite ordine reale.",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        -80
+      ],
+      "id": "3724f441-b55f-4569-b63e-9badd20bb6e2",
+      "name": "Send message and wait for response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const o = $input.first().json.output;\nconst x = typeof o === 'string' ? (() => {try {return JSON.parse(o)} catch {return {}}})() : (o || {});\nconst feed = $('Normalize Market Feed').first().json;\nconst pairs = feed.pairs || [];\nconst pairName = String(x.pair || '');\nconst m = pairs.find(p => [p.pair,p.symbol,p.name].includes(pairName));\nconst price = Number(x.price), amount = Number(x.amount);\nconst quote = m && [m.bestBuy,m.bestSell,m.bestBid,m.bestAsk,m.bid,m.ask].some(v => v !== undefined && v !== null && Number(v) > 0);\nconst marketActive = m && m.paused === false && m.active !== false && m.status !== 'paused';\nconst valid = feed.source_ok === true && marketActive && quote && x.ready_to_trade === true && ['buy','sell'].includes(x.side) && ['TNK/USDC','RESET/USDC'].includes(pairName) && Number.isFinite(price) && price > 0 && Number.isFinite(amount) && amount > 0 && price * amount <= 10;\nreturn [{json:{valid:!!valid, proposal: {pair:pairName,side:x.side,price,amount,ttlMin:60},reason:String(x.reason||''),test_only:true}}];"
+      },
+      "id": "30a6ac0f-51e8-4a74-9c66-a4fabc161b61",
+      "name": "Validate Proposal (max 10 USDC)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b4101759-5196-4bb8-983a-bed6cad24bec",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -560,
+        -80
+      ],
+      "id": "5b5e38fd-da3d-43c0-8cc9-e3bc9cff14e1",
+      "name": "If Valid Proposal"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f4258ce0-751f-4482-90cc-5485e34d613d",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -160,
+        -80
+      ],
+      "id": "674eb9f6-ff93-4cc9-b630-9ab540b50050",
+      "name": "If Approved"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0de14f0c-a24d-4e8c-85ae-144c80027516",
+              "name": "status",
+              "value": "APPROVED_TEST_ONLY_NO_ORDER_SENT",
+              "type": "string"
+            },
+            {
+              "id": "9ebb19ed-0510-44b9-b74e-5179e03cc620",
+              "name": "proposal",
+              "value": "={{ $('Validate Proposal (max 10 USDC)').first().json.proposal }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "24dee902-11e3-4963-a1a3-bd11e85c3cd0",
+      "name": "Approved - preview only",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        48,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "169168d3-61e3-46d2-acd7-065a9af28170",
+              "name": "status",
+              "value": "REJECTED_NO_ORDER_SENT",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "52f66fef-863a-442e-9dac-77e433902e37",
+      "name": "Rejected - stop",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        48,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://example.invalid:47301/prepare",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Validate Proposal (max 10 USDC)').item.json.proposal) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -560,
+        176
+      ],
+      "id": "4ab021da-16b9-4567-990d-5b42fb83da32",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start manual": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request4": {
+      "main": [
+        [
+          {
+            "node": "Normalize Market Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Market Feed": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Validate Proposal (max 10 USDC)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Proposal (max 10 USDC)": {
+      "main": [
+        [
+          {
+            "node": "If Valid Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Valid Proposal": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message and wait for response": {
+      "main": [
+        [
+          {
+            "node": "If Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Approved": {
+      "main": [
+        [
+          {
+            "node": "Approved - preview only",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected - stop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send message and wait for response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
