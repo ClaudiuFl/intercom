@@ -1,0 +1,106 @@
+{
+  "runtime": "Node VM harness; actual n8n import/execution not tested",
+  "originalReproduction": {
+    "delay_0ms": {
+      "valid": 6,
+      "invalid": 12
+    },
+    "delay_31000ms": {
+      "valid": 0,
+      "invalid": 18
+    }
+  },
+  "correctedRuns": [
+    {
+      "realClockDelayMs": 0,
+      "routed": {
+        "If valid": {
+          "true": 6,
+          "false": 12
+        },
+        "If approved": {
+          "true": 2,
+          "false": 4
+        }
+      },
+      "terminalCounts": {
+        "SIMULATED_APPROVED_NO_ORDER": 2,
+        "REJECTED_NO_ORDER": 2,
+        "EXPIRED_NO_ORDER": 1,
+        "BINDING_MISMATCH_NO_ORDER": 1,
+        "INVALID_NO_ORDER": 12
+      },
+      "passed": 18,
+      "failed": 0
+    },
+    {
+      "realClockDelayMs": 31000,
+      "routed": {
+        "If valid": {
+          "true": 6,
+          "false": 12
+        },
+        "If approved": {
+          "true": 2,
+          "false": 4
+        }
+      },
+      "terminalCounts": {
+        "SIMULATED_APPROVED_NO_ORDER": 2,
+        "REJECTED_NO_ORDER": 2,
+        "EXPIRED_NO_ORDER": 1,
+        "BINDING_MISMATCH_NO_ORDER": 1,
+        "INVALID_NO_ORDER": 12
+      },
+      "passed": 18,
+      "failed": 0
+    },
+    {
+      "realClockDelayMs": 120000,
+      "routed": {
+        "If valid": {
+          "true": 6,
+          "false": 12
+        },
+        "If approved": {
+          "true": 2,
+          "false": 4
+        }
+      },
+      "terminalCounts": {
+        "SIMULATED_APPROVED_NO_ORDER": 2,
+        "REJECTED_NO_ORDER": 2,
+        "EXPIRED_NO_ORDER": 1,
+        "BINDING_MISMATCH_NO_ORDER": 1,
+        "INVALID_NO_ORDER": 12
+      },
+      "passed": 18,
+      "failed": 0
+    },
+    {
+      "realClockDelayMs": 86400000,
+      "routed": {
+        "If valid": {
+          "true": 6,
+          "false": 12
+        },
+        "If approved": {
+          "true": 2,
+          "false": 4
+        }
+      },
+      "terminalCounts": {
+        "SIMULATED_APPROVED_NO_ORDER": 2,
+        "REJECTED_NO_ORDER": 2,
+        "EXPIRED_NO_ORDER": 1,
+        "BINDING_MISMATCH_NO_ORDER": 1,
+        "INVALID_NO_ORDER": 12
+      },
+      "passed": 18,
+      "failed": 0
+    }
+  ],
+  "negativeSummaryChecks": 2,
+  "gmailWorkflowNodes": 15,
+  "gmailWorkflowContainsOfflineFixtures": false
+}

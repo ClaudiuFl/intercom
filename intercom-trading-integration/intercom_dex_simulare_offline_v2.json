@@ -1,0 +1,331 @@
+{
+  "name": "Intercom DEX - OFFLINE deterministic regression - 18 cases - LIVE OFF",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a28a0a39-23ac-4e9e-8553-48c8005d8927",
+      "name": "Start manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Virtual time belongs only to offline test fixtures. Never use it for live data.\nconst now = 1800000000000;\nconst base = () => ({simulationClockMs:now, test_only:true, mode:'SIMULATION', market:{pair:'TNK/USDC',active:true,paused:false,status:'active',timestamp:now,bid:0.99,ask:1,availableBase:100}, candidate:{pair:'TNK/USDC',side:'buy',price:1,amount:5,reason:'Fixture sintetic, nu recomandare financiara',ready_to_trade:true}, decision:true, decisionAgeMs:0});\nconst cases=[];\nfunction add(name, expected, edit=()=>{}) {const x=base();edit(x);cases.push({json:{...x,case:name,expected}});}\nadd('valid_approved','SIMULATED_APPROVED_NO_ORDER');\nadd('valid_rejected','REJECTED_NO_ORDER',x=>x.decision=false);\nadd('wait','INVALID_NO_ORDER',x=>{x.candidate.side='wait';x.candidate.price=null;x.candidate.amount=0;x.candidate.ready_to_trade=false;});\nadd('over_budget','INVALID_NO_ORDER',x=>x.candidate.amount=11);\nadd('missing_ask','INVALID_NO_ORDER',x=>delete x.market.ask);\nadd('stale_market','INVALID_NO_ORDER',x=>x.market.timestamp-=120000);\nadd('paused','INVALID_NO_ORDER',x=>x.market.paused=true);\nadd('insufficient_liquidity','INVALID_NO_ORDER',x=>x.market.availableBase=1);\nadd('numeric_string','INVALID_NO_ORDER',x=>x.candidate.price='1');\nadd('wrong_price','INVALID_NO_ORDER',x=>x.candidate.price=0.5);\nadd('wrong_pair','INVALID_NO_ORDER',x=>x.candidate.pair='UNKNOWN/USDC');\nadd('crossed_book','INVALID_NO_ORDER',x=>x.market.bid=2);\nadd('approval_string','REJECTED_NO_ORDER',x=>x.decision='true');\nadd('expired_approval','EXPIRED_NO_ORDER',x=>x.decisionAgeMs=61000);\nadd('changed_after_approval','BINDING_MISMATCH_NO_ORDER',x=>x.tamper=true);\nadd('sell_approved','SIMULATED_APPROVED_NO_ORDER',x=>{x.candidate.side='sell';x.candidate.price=0.99;});\nadd('invalid_mode','INVALID_NO_ORDER',x=>x.test_only=false);\nadd('future_market','INVALID_NO_ORDER',x=>x.market.timestamp+=60000);\nreturn cases;",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "a09e20c0-83c6-43d4-88f5-c3a968b35692",
+      "name": "Synthetic fixtures",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item,index) => {\nconst x=item.json, m=x.market||{}, c=x.candidate||{}, errors=[];\nconst positive=v=>typeof v==='number' && Number.isFinite(v) && v>0;\nif(x.test_only!==true || x.mode!=='SIMULATION') errors.push('simulation_required');\nif(!['TNK/USDC','RESET/USDC'].includes(c.pair) || m.pair!==c.pair) errors.push('pair');\nif(m.active!==true || m.paused!==false || m.status!=='active') errors.push('market_inactive');\nconst now=x.simulationClockMs;\nif(typeof now!=='number'||!Number.isSafeInteger(now)||now<=0)errors.push('invalid_simulation_clock');\nif(typeof m.timestamp!=='number' || !Number.isFinite(m.timestamp) || now-m.timestamp>30000 || m.timestamp>now+1000) errors.push('market_timestamp');\nif(!positive(m.bid)||!positive(m.ask)||m.bid>m.ask) errors.push('quotes');\nif(c.ready_to_trade!==true || !['buy','sell'].includes(c.side)) errors.push('not_ready');\nif(!positive(c.price)||!positive(c.amount)) errors.push('numeric_fields');\nconst notional=c.price*c.amount;\nif(!Number.isFinite(notional)||notional<=0||notional>10) errors.push('notional');\nif(!positive(m.availableBase)||!positive(c.amount)||c.amount>m.availableBase) errors.push('liquidity');\nconst quote=c.side==='buy'?m.ask:m.bid;\nif(!positive(c.price)||!positive(quote)||Math.abs(c.price-quote)>1e-9) errors.push('price_quote_mismatch');\nif(typeof c.reason!=='string'||!c.reason.trim()||c.reason.length>1000) errors.push('reason');\nconst valid=errors.length===0;\nconst proposal=valid?{pair:c.pair,side:c.side,price:c.price,amount:c.amount,notionalUSDC:notional,reason:c.reason}:null;\n// Unique within this execution; the offline fixture's case is unique. Not a production idempotency store.\nconst proposal_id=String($execution.id)+':'+x.case;\nconst snapshot=valid?JSON.stringify(proposal):null;\nreturn {pairedItem:{item:index},json:{...x,valid,errors,proposal,proposal_id,snapshot,createdAt:now,expiresAt:Math.min(now+60000,Number(m.timestamp)+30000),status:valid?'AWAITING_SIMULATED_APPROVAL':'INVALID_NO_ORDER'}};\n});",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "67c8fb71-499f-4459-8464-23e8f7dad45d",
+      "name": "Validate simulation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b4101759-5196-4bb8-983a-bed6cad24bec",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "e3c309b2-b1d8-4ffe-ab67-1adcdba68e3c",
+      "name": "If valid"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item=>{\nconst x=item.json;\n// Local fixture, no Gmail request and no actual user approval.\nconst approval={approved:x.decision,proposal_id:x.proposal_id,snapshot:x.snapshot};\nconst proposal=x.tamper?{...x.proposal,amount:x.proposal.amount+1}:x.proposal;\nreturn {json:{...x,proposal,approval,simulatedNow:x.simulationClockMs+x.decisionAgeMs}};\n});",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "43743768-e3be-41bf-b338-bc3456e593f6",
+      "name": "Simulated approval - NO EMAIL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item=>{\nconst x=item.json;\nlet status='REJECTED_NO_ORDER';\nif(x.test_only!==true||x.mode!=='SIMULATION'||x.valid!==true) status='INVALID_NO_ORDER';\nelse if(x.approval?.proposal_id!==x.proposal_id || x.approval?.snapshot!==x.snapshot || JSON.stringify(x.proposal)!==x.snapshot) status='BINDING_MISMATCH_NO_ORDER';\nelse if(!Number.isFinite(x.simulatedNow)||x.simulatedNow>=x.expiresAt) status='EXPIRED_NO_ORDER';\nelse if(x.approval?.approved===true) status='SIMULATED_APPROVED_NO_ORDER';\nreturn {json:{...x,approved:status==='SIMULATED_APPROVED_NO_ORDER',status}};\n});",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "e5a5436d-0123-4b91-9c3e-4e0adfd8d5e4",
+      "name": "Revalidate approval binding and expiry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b4101759-5196-4bb8-983a-bed6cad24bec",
+              "leftValue": "={{ $json.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1760,
+        -100
+      ],
+      "id": "6d73cc39-bc9a-4ec0-80fb-acbd3fa47fe2",
+      "name": "If approved"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item=>{const x=item.json;if(x.status!==x.expected)throw new Error('Unexpected outcome for '+x.case+': '+x.status+' expected '+x.expected);return {json:{case:x.case,status:x.status,expected:x.expected,test_passed:x.status===x.expected,mode:'SIMULATION',test_only:true,order_sent:false,external_calls:0,proposal_id:x.proposal_id,proposal:x.proposal,errors:x.errors,notice:'Validare logica offline; nu simuleaza fill, comisioane, sold sau profit.'}};});",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "dc27ded8-7cfa-477a-9895-fe269fe7c495",
+      "name": "Approved preview - NO EXECUTION",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item=>{const x=item.json;if(x.status!==x.expected)throw new Error('Unexpected outcome for '+x.case+': '+x.status+' expected '+x.expected);return {json:{case:x.case,status:x.status,expected:x.expected,test_passed:x.status===x.expected,mode:'SIMULATION',test_only:true,order_sent:false,external_calls:0,proposal_id:x.proposal_id,proposal:x.proposal,errors:x.errors,notice:'Validare logica offline; nu simuleaza fill, comisioane, sold sau profit.'}};});",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "9e9daee2-9d08-48ef-bb93-cc4baf99c400",
+      "name": "Rejected or expired - STOP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item=>{const x=item.json;if(x.status!==x.expected)throw new Error('Unexpected outcome for '+x.case+': '+x.status+' expected '+x.expected);return {json:{case:x.case,status:x.status,expected:x.expected,test_passed:x.status===x.expected,mode:'SIMULATION',test_only:true,order_sent:false,external_calls:0,proposal_id:x.proposal_id,proposal:x.proposal,errors:x.errors,notice:'Validare logica offline; nu simuleaza fill, comisioane, sold sau profit.'}};});",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "2a3fcb2a-a75d-44b5-ad01-c35178645acd",
+      "name": "Invalid proposal - STOP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        200
+      ]
+    },
+    {
+      "id": "offline-validation-summary-v2",
+      "name": "Automatic simulation summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items=$input.all();\nif(items.length!==18)throw new Error('Expected exactly 18 offline fixtures; run the complete simulation from Start manual');\nconst names=new Set(items.map(i=>i.json.case));if(names.size!==18)throw new Error('Duplicate fixture cases');\nlet valid=0,invalid=0;const errorsByCase={};\nfor(const item of items){const x=item.json;if(typeof x.valid!=='boolean')throw new Error('valid must be a boolean');if(x.valid)valid++;else invalid++;errorsByCase[x.case]=x.errors;}\nconst expectedInvalid=new Set(['wait','over_budget','missing_ask','stale_market','paused','insufficient_liquidity','numeric_string','wrong_price','wrong_pair','crossed_book','invalid_mode','future_market']);\nfor(const i of items)if(i.json.valid===expectedInvalid.has(i.json.case))throw new Error('Unexpected validation result: '+i.json.case+' '+JSON.stringify(i.json.errors));\nif(valid!==6||invalid!==12)throw new Error('Incorrect validation split');\nreturn [{json:{mode:'OFFLINE_SIMULATION_ONLY',live_enabled:false,order_sent:false,external_calls:0,validation_passed:true,total:18,valid:6,invalid:12,expectedTerminalCounts:{SIMULATED_APPROVED_NO_ORDER:2,REJECTED_NO_ORDER:2,EXPIRED_NO_ORDER:1,BINDING_MISMATCH_NO_ORDER:1,INVALID_NO_ORDER:12},errorsByCase,cases:items.map(i=>i.json),notice:'Virtual clock only for synthetic fixtures. This does not validate Google, Gmail, n8n runtime, real quotes, fills or PnL.'}}];"
+      },
+      "position": [
+        650,
+        0
+      ]
+    },
+    {
+      "id": "offline-expand-cases-v2",
+      "name": "Cases for IF routing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const s=$input.first().json;if(s.validation_passed!==true||!Array.isArray(s.cases))throw new Error('Missing suite summary');return s.cases.map(x=>({json:x,pairedItem:{item:0}}));"
+      },
+      "position": [
+        850,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Start manual": {
+      "main": [
+        [
+          {
+            "node": "Synthetic fixtures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Synthetic fixtures": {
+      "main": [
+        [
+          {
+            "node": "Validate simulation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate simulation": {
+      "main": [
+        [
+          {
+            "node": "Automatic simulation summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If valid": {
+      "main": [
+        [
+          {
+            "node": "Simulated approval - NO EMAIL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invalid proposal - STOP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulated approval - NO EMAIL": {
+      "main": [
+        [
+          {
+            "node": "Revalidate approval binding and expiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revalidate approval binding and expiry": {
+      "main": [
+        [
+          {
+            "node": "If approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If approved": {
+      "main": [
+        [
+          {
+            "node": "Approved preview - NO EXECUTION",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected or expired - STOP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Automatic simulation summary": {
+      "main": [
+        [
+          {
+            "node": "Cases for IF routing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cases for IF routing": {
+      "main": [
+        [
+          {
+            "node": "If valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
