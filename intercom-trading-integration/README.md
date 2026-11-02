@@ -2,6 +2,10 @@
 
 **Versiunea curentă: integrare de aprobare și simulare, LIVE blocat structural.** Nu este un executor DEX gata de mainnet. Datele sunt sintetice; niciun secret wallet, transport de trading sau funcție de semnare blockchain nu este inclusă.
 
+## Pornire simplă pe Windows
+
+Pentru testarea completă Gmail/OIDC folosește **WINDOWS.md**, **Start-Windows.ps1** și **intercom_dex_WINDOWS_SANDBOX.json**. Launcher-ul configurează serviciile, protejează secretele local cu Windows DPAPI și verifică automat cele trei rute Guard. Noua variantă nu folosește `$vars`, nu cere credențiale OpenAI și generează o propunere sintetică deterministă de 5 USDC. Simularea offline V2 rămâne neschimbată.
+
 ## Fișiere de folosit
 - `intercom_dex_GMAIL_OIDC_SANDBOX.json`: workflow-ul n8n actual, pentru import ca workflow NOU, dezactivat.
 - `GOOGLE_OIDC.md`: pașii Google Cloud, fixarea identității, configurarea pe laptop și testarea manuală.
@@ -23,7 +27,9 @@ Limita rămâne 10 USDC pe propunere, cu comisionul sintetic USDC inclus; suplim
 ## Ce s-a verificat
 Repository DEX oficial inspectat la commit 90dcd473f89576cbb588f12e08802229b060a8b9, versiunea 0.1.47. API-ul real și codul confirmă GET /v1/market/view și control bearer-token local; POST /take este cu efect real și pornește automat protocolul. /prepare nu a fost găsit și nu este folosit.
 
-**59/59 teste locale trecute**: 22 guard/structură veche, 3 HTTP guard, 23 OIDC/JWT/structură nouă, 4 HTTP OIDC și 7 conversii DEX. Sunt verificate falsificarea, issuer/audience/nonce/signature/expiry, contul greșit, CSRF, state/session replay, concurența, restartul, piața schimbată, plafonul, comisioanele, kill switch și lipsa rutelor LIVE. Testele JWT folosesc chei RSA generate pentru test, iar redirecturile HTTP către Google nu sunt urmate. Nu au existat apeluri Gmail, OpenAI, Google token exchange sau DEX real.
+**Suita inițială de 59 teste locale rămâne trecută**: 22 guard/structură veche, 3 HTTP guard, 23 OIDC/JWT/structură nouă, 4 HTTP OIDC și 7 conversii DEX. Sunt verificate falsificarea, issuer/audience/nonce/signature/expiry, contul greșit, CSRF, state/session replay, concurența, restartul, piața schimbată, plafonul, comisioanele, kill switch și lipsa rutelor LIVE. Testele JWT folosesc chei RSA generate pentru test, iar redirecturile HTTP către Google nu sunt urmate. Nu au existat apeluri Gmail, OpenAI, Google token exchange sau DEX real.
+
+Cu verificările Windows adăugate, suita actuală rulează 72 teste: 71 trecute și 1 test DPAPI real omis pe Linux. PowerShell și Windows DPAPI reale nu au fost executate aici.
 
 n8n nu este disponibil în mediul Codex. Importul și execuția în versiunea de pe laptop, autentificarea Google reală și trimiterea Gmail trebuie validate după configurarea locală. Nu sunt pretinse ca testate. Succesul testelor locale nu activează LIVE.
 

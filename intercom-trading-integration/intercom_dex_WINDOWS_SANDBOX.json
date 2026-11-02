@@ -1,0 +1,419 @@
+{
+  "name": "Intercom DEX - Windows Gmail OIDC - E2E SANDBOX LIVE OFF",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "0389a519-c723-42a2-a0c5-8929fa000bcb",
+      "name": "Start manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Guard - synthetic market ONLY",
+      "id": "3c2d8799-2030-4776-aa56-841aafd13537",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "parameters": {
+        "url": "={{ $('Local sandbox configuration').first().json.guardBaseUrl + '/v1/markets' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "position": [
+        220,
+        0
+      ],
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "name": "Normalize Market Feed",
+      "id": "af1cf741-709d-4d05-993a-057082a5f78c",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const x=$input.first().json;if(x.mode!=='SANDBOX'||x.synthetic!==true||x.live_enabled!==false||!Array.isArray(x.pairs)||x.pairs.length!==2)throw new Error('Sandbox market contract required');if(typeof x.approver_email!=='string'||!x.approver_email.includes('@'))throw new Error('Approver email missing in Guard setup');return [{json:{pairs:x.pairs,mode:'SANDBOX'}}];"
+      },
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "name": "Validate candidate - fail closed",
+      "id": "e5c2ebd7-eb1e-4a2a-b149-9b7432484cf1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const raw=$input.first().json.output; const c=typeof raw==='string'?JSON.parse(raw):raw; if(!c||typeof c!=='object'||Array.isArray(c))throw new Error('Invalid AI output'); if(c.side==='wait'||c.ready_to_trade!==true)return [{json:{valid:false,status:'WAIT_NO_ORDER'}}]; const valid=['TNK/USDC','RESET/USDC'].includes(c.pair)&&['buy','sell'].includes(c.side)&&typeof c.price==='number'&&Number.isFinite(c.price)&&c.price>0&&typeof c.amount==='number'&&Number.isFinite(c.amount)&&c.amount>0&&c.price*c.amount<=10&&typeof c.reason==='string'&&c.reason.length>0&&c.reason.length<=1000; if(!valid)throw new Error('Invalid candidate'); return [{json:{valid:true,request_id:'n8n:'+String($execution.id),candidate:c}}];"
+      },
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b4101759-5196-4bb8-983a-bed6cad24bec",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "60963e82-5d10-47a1-872c-550562273092",
+      "name": "If Valid Proposal"
+    },
+    {
+      "name": "Guard - persist immutable proposal",
+      "id": "fc6e4676-a077-477a-867b-80a88a57e294",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "parameters": {
+        "url": "={{ $('Local sandbox configuration').first().json.guardBaseUrl + '/v1/proposals' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        },
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request_id: $json.request_id, candidate: $json.candidate }) }}"
+      },
+      "position": [
+        1340,
+        -80
+      ],
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $('Guard - synthetic market ONLY').first().json.approver_email }}",
+        "subject": "Intercom DEX - Windows E2E SANDBOX - aprobare necesara",
+        "emailType": "text",
+        "message": "=LIVE DEZACTIVAT. Datele sunt sintetice. Propunere exactă: {{ JSON.stringify($('Guard - persist immutable proposal').first().json.proposal) }}. ID: {{ $('Guard - persist immutable proposal').first().json.proposal_id }}. Digest: {{ $('Guard - persist immutable proposal').first().json.digest }}. Expiră (Unix secunde): {{ $('Guard - persist immutable proposal').first().json.expiresAt }}. Deschide pe laptopul pe care rulează serviciul: {{ $('Guard - persist immutable proposal').first().json.approval_url }} . Autentifică-te cu contul Google autorizat, verifică detaliile și apasă explicit Aprob sau Resping. Simpla deschidere a linkului NU aprobă. Nicio tranzacție reală nu poate fi trimisă de acest build.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1560,
+        -80
+      ],
+      "id": "9f5832e4-00eb-4ee0-85a4-b8c4f62ecded",
+      "name": "Gmail - secure approval link"
+    },
+    {
+      "name": "WAIT - no proposal",
+      "id": "3db9b79c-8ab9-4be6-bf2f-8d60084bdc87",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "return [{json:{status:'WAIT_NO_ORDER',order_sent:false,live_enabled:false}}];"
+      },
+      "position": [
+        1340,
+        180
+      ]
+    },
+    {
+      "name": "Guard - read decision",
+      "id": "b20b8d33-821e-4f22-b983-438458f90901",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1780,
+        -80
+      ],
+      "parameters": {
+        "url": "={{ $('Local sandbox configuration').first().json.guardBaseUrl + '/v1/proposals/' + $('Guard - persist immutable proposal').first().json.proposal_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b4101759-5196-4bb8-983a-bed6cad24bec",
+              "leftValue": "={{ $json.pending === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2000,
+        -80
+      ],
+      "id": "aa1f1d0b-594b-4b6c-858a-5c6e538689bd",
+      "name": "If pending"
+    },
+    {
+      "name": "Wait 5 seconds",
+      "id": "3a915f6b-136f-486f-a086-78c211d29af2",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2220,
+        -180
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "webhookId": "5332eb14-2a4e-4ba2-b156-c6552e556fe8"
+    },
+    {
+      "name": "Result - LIVE HARD DISABLED",
+      "id": "11ecd843-03b6-4546-8503-e4c6a484d122",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        60
+      ],
+      "parameters": {
+        "jsCode": "const x=$input.first().json;if(x.live_enabled!==false||x.order_sent!==false||x.pending!==false)throw new Error('Invalid terminal state');return [{json:{proposal_id:x.proposal_id,state:x.state,result:x.result,order_sent:false,live_enabled:false}}];"
+      }
+    },
+    {
+      "name": "Local sandbox configuration",
+      "id": "065363f1-cc06-40c0-8bfe-e88bc1d76ae2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{json:{guardBaseUrl:'http://127.0.0.1:8765',proposalSource:'test',live_enabled:false}}];"
+      }
+    },
+    {
+      "name": "Deterministic test proposal",
+      "id": "224d0693-b881-45f8-abd0-6d9050419541",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -120
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{json:{output:{pair:'TNK/USDC',side:'buy',price:1,amount:5,reason:'Deterministic end-to-end Gmail/OIDC test; synthetic data only; no order',ready_to_trade:true}}}];"
+      }
+    }
+  ],
+  "connections": {
+    "Start manual": {
+      "main": [
+        [
+          {
+            "node": "Local sandbox configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard - synthetic market ONLY": {
+      "main": [
+        [
+          {
+            "node": "Normalize Market Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Market Feed": {
+      "main": [
+        [
+          {
+            "node": "Deterministic test proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate candidate - fail closed": {
+      "main": [
+        [
+          {
+            "node": "If Valid Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard - persist immutable proposal": {
+      "main": [
+        [
+          {
+            "node": "Gmail - secure approval link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Valid Proposal": {
+      "main": [
+        [
+          {
+            "node": "Guard - persist immutable proposal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WAIT - no proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - secure approval link": {
+      "main": [
+        [
+          {
+            "node": "Guard - read decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard - read decision": {
+      "main": [
+        [
+          {
+            "node": "If pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If pending": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Result - LIVE HARD DISABLED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 seconds": {
+      "main": [
+        [
+          {
+            "node": "Guard - read decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Local sandbox configuration": {
+      "main": [
+        [
+          {
+            "node": "Guard - synthetic market ONLY",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deterministic test proposal": {
+      "main": [
+        [
+          {
+            "node": "Validate candidate - fail closed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

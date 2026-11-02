@@ -2,6 +2,7 @@
 import hmac,json,os,sqlite3
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from guard import Guard,SyntheticMarket,Denied,canonical
+from runtime_config import readiness
 os.umask(0o077)
 API_KEY=os.environ.get('TRADING_GUARD_API_KEY','')
 RECEIPT_KEY=os.environ.get('TRADING_APPROVAL_RECEIPT_KEY','')
@@ -16,7 +17,7 @@ class Handler(BaseHTTPRequestHandler):
     def authorized(self):return hmac.compare_digest(self.headers.get('X-Guard-Key',''),API_KEY)
     def do_GET(self):
         if not self.authorized():return self.reply(401,{'error':'unauthorized'})
-        if self.path=='/v1/markets':return self.reply(200,{'pairs':[g.market.view(p) for p in sorted(__import__('guard').PAIRS)],'mode':'SANDBOX','synthetic':True,'live_enabled':False})
+        if self.path=='/v1/markets':return self.reply(200,{'pairs':[g.market.view(p) for p in sorted(__import__('guard').PAIRS)],'mode':'SANDBOX','synthetic':True,'live_enabled':False,'approver_email':os.environ.get('TRADING_APPROVER_EMAIL','')})
         if self.path.startswith('/v1/proposals/'):
             import re,time
             pid=self.path.removeprefix('/v1/proposals/')
@@ -28,7 +29,7 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute("UPDATE proposals SET state='EXPIRED' WHERE id=?",(pid,))
                 row=c.execute('SELECT * FROM proposals WHERE id=?',(pid,)).fetchone();c.commit()
             return self.reply(200,{**g.public(row),'result':json.loads(row['result']) if row['result'] else None,'order_sent':False,'pending':row['state']=='PENDING'})
-        if self.path=='/v1/health':return self.reply(200,{'mode':'SANDBOX','live_enabled':False,'dex_adapter':'NOT_IMPLEMENTED','authenticated_approver_configured':bool(RECEIPT_KEY and APPROVER)})
+        if self.path=='/v1/health':return self.reply(200,{**readiness(),'approver_email':os.environ.get('TRADING_APPROVER_EMAIL',''),'dex_adapter':'NOT_IMPLEMENTED','authenticated_approver_configured':bool(RECEIPT_KEY and APPROVER)})
         self.reply(404,{'error':'route_not_available'})
     def do_POST(self):
         if not self.authorized():return self.reply(401,{'error':'unauthorized'})

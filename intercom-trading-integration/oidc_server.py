@@ -1,8 +1,9 @@
-import os,json,html
+import os,json,html,hmac
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit,parse_qs
 from guard import Guard,SyntheticMarket,Denied
+from runtime_config import readiness
 from oidc import GoogleVerifier,OIDCApproval,confirmation_page
 
 def main():
@@ -31,6 +32,10 @@ def main():
             if not self.host_ok():return self.page(403,'Host refused')
             try:
                 u=urlsplit(self.path);q=parse_qs(u.query,keep_blank_values=True)
+                if u.path=='/internal/readiness' and not u.query:
+                    api=os.environ.get('TRADING_GUARD_API_KEY','')
+                    if len(api)<32 or not hmac.compare_digest(self.headers.get('X-Guard-Key',''),api):return self.page(401,'Unauthorized')
+                    return self.page(200,json.dumps(readiness()))
                 if any(len(v)!=1 for v in q.values()):raise Denied('duplicate_parameters')
                 if u.path in ('/approve','/oidc/setup'):
                     if set(q)-{'proposal_id'}:raise Denied('unknown_parameter')
